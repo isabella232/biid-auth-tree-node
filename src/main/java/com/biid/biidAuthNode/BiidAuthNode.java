@@ -18,17 +18,14 @@
 package com.biid.biidAuthNode;
 
 import com.google.inject.assistedinject.Assisted;
-import com.iplanet.sso.SSOException;
-import com.sun.identity.idm.AMIdentity;
-import com.sun.identity.idm.IdRepoException;
 import com.sun.identity.shared.debug.Debug;
+import org.apache.commons.lang.StringUtils;
 import org.forgerock.openam.annotations.sm.Attribute;
 import org.forgerock.openam.auth.node.api.*;
 import org.forgerock.openam.core.CoreWrapper;
 
 import javax.inject.Inject;
 
-import static org.forgerock.openam.auth.node.api.SharedStateConstants.REALM;
 import static org.forgerock.openam.auth.node.api.SharedStateConstants.USERNAME;
 
 /** 
@@ -40,28 +37,26 @@ import static org.forgerock.openam.auth.node.api.SharedStateConstants.USERNAME;
 public class BiidAuthNode extends AbstractDecisionNode {
 
     private final Config config;
+    private final BiidTransactionService biidTransactionService = new BiidTransactionService();
     private final CoreWrapper coreWrapper;
     private final static String DEBUG_FILE = "BiidAuthNode";
     protected Debug debug = Debug.getInstance(DEBUG_FILE);
+
 
     /**
      * Configuration for the node.
      */
     public interface Config {
         @Attribute(order = 100)
-        default String usernameHeader() {
-            return "X-OpenAM-Username";
+        default String entityKey() {
+            return "entityKey";
         }
 
         @Attribute(order = 200)
-        default String passwordHeader() {
-            return "X-OpenAM-Password";
+        default String appKey() {
+            return "appKey";
         }
 
-        @Attribute(order = 300)
-        default String secretKey() {
-            return "secretKey";
-        }
     }
 
 
@@ -78,26 +73,18 @@ public class BiidAuthNode extends AbstractDecisionNode {
 
     @Override
     public Action process(TreeContext context) throws NodeProcessException {
-        boolean hasUsername = context.request.headers.containsKey(config.usernameHeader());
-        boolean hasPassword = context.request.headers.containsKey(config.passwordHeader());
-
-        if (!hasUsername || !hasPassword) {
+        String username = context.sharedState.get(USERNAME).asString();
+        if (StringUtils.isEmpty(username)) {
             return goTo(false).build();
         }
+        String entityKey = config.entityKey();
+        String appKey = config.appKey();
 
-        String secret = config.secretKey();
-        String password = context.request.headers.get(config.passwordHeader()).get(0);
-        String username = context.request.headers.get(config.usernameHeader()).get(0);
-        AMIdentity userIdentity = coreWrapper.getIdentity(username, context.sharedState.get(REALM).asString());
         try {
-            if (secret.equals(password) && userIdentity != null && userIdentity.isExists() && userIdentity.isActive()) {
-                return goTo(true).replaceSharedState(context.sharedState.copy().put(USERNAME, username)).build();
-            }
-        } catch (IdRepoException e) {
-            debug.error("[" + DEBUG_FILE + "]: " + "Error locating user '{}' ", e);
-        } catch (SSOException e) {
+            biidTransactionService.sendAuthTransaction(username, entityKey, appKey, "http://callback.URL");
+        } catch (Exception e) {
             debug.error("[" + DEBUG_FILE + "]: " + "Error locating user '{}' ", e);
         }
-        return goTo(false).build();
+        return goTo(true).build();
     }
 }
