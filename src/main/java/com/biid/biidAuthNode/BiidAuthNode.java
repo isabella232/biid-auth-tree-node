@@ -17,6 +17,7 @@
 
 package com.biid.biidAuthNode;
 
+import com.biid.api.service.integrator.model.IdentityTransactionItem;
 import com.google.inject.assistedinject.Assisted;
 import com.sun.identity.shared.debug.Debug;
 import org.apache.commons.lang.StringUtils;
@@ -26,14 +27,15 @@ import org.forgerock.openam.core.CoreWrapper;
 
 import javax.inject.Inject;
 
+import static java.lang.Thread.sleep;
 import static org.forgerock.openam.auth.node.api.SharedStateConstants.USERNAME;
 
-/** 
- * A node that checks to see if zero-page login headers have specified username and shared key 
- * for this request. 
+/**
+ * A node that checks to see if zero-page login headers have specified username and shared key
+ * for this request.
  */
-@Node.Metadata(outcomeProvider  = AbstractDecisionNode.OutcomeProvider.class,
-               configClass      = BiidAuthNode.Config.class)
+@Node.Metadata(outcomeProvider = AbstractDecisionNode.OutcomeProvider.class,
+        configClass = BiidAuthNode.Config.class)
 public class BiidAuthNode extends AbstractDecisionNode {
 
     private final Config config;
@@ -62,6 +64,7 @@ public class BiidAuthNode extends AbstractDecisionNode {
 
     /**
      * Create the node.
+     *
      * @param config The service config.
      * @throws NodeProcessException If the configuration was not valid.
      */
@@ -81,10 +84,21 @@ public class BiidAuthNode extends AbstractDecisionNode {
         String appKey = config.appKey();
 
         try {
-            biidTransactionService.sendAuthTransaction(username, entityKey, appKey, "http://callback.URL");
+            String idOfTransaction = biidTransactionService.sendAuthTransaction(username, entityKey, appKey);
+            int counter = 0;
+            String status = biidTransactionService.getTransactionStatusById(idOfTransaction, entityKey, appKey);
+            //2 minutres to verify
+            while (status.equals(IdentityTransactionItem.StatusEnum.PENDING.getValue()) && counter < 12) {
+                sleep(10_000);
+                counter++;
+                status = biidTransactionService.getTransactionStatusById(idOfTransaction, entityKey, appKey);
+            }
+            if (status.equals(IdentityTransactionItem.StatusEnum.SUCCESSFUL.getValue())) {
+                goTo(true).build();
+            }
         } catch (Exception e) {
             debug.error("[" + DEBUG_FILE + "]: " + "Error locating user '{}' ", e);
         }
-        return goTo(true).build();
+        return goTo(false).build();
     }
 }
