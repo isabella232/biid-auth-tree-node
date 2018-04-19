@@ -21,11 +21,17 @@ import com.biid.api.service.integrator.model.IdentityTransactionItem;
 import com.google.inject.assistedinject.Assisted;
 import com.sun.identity.shared.debug.Debug;
 import org.apache.commons.lang.StringUtils;
+import org.forgerock.guava.common.collect.ImmutableList;
+import org.forgerock.json.JsonValue;
 import org.forgerock.openam.annotations.sm.Attribute;
 import org.forgerock.openam.auth.node.api.*;
 import org.forgerock.openam.core.CoreWrapper;
+import org.forgerock.util.i18n.PreferredLocales;
 
 import javax.inject.Inject;
+
+import java.util.List;
+import java.util.ResourceBundle;
 
 import static java.lang.Thread.sleep;
 import static org.forgerock.openam.auth.node.api.SharedStateConstants.USERNAME;
@@ -34,15 +40,17 @@ import static org.forgerock.openam.auth.node.api.SharedStateConstants.USERNAME;
  * A node that checks to see if zero-page login headers have specified username and shared key
  * for this request.
  */
-@Node.Metadata(outcomeProvider = AbstractDecisionNode.OutcomeProvider.class,
+@Node.Metadata(outcomeProvider = BiidAuthNode.OutcomeProvider.class,
         configClass = BiidAuthNode.Config.class)
-public class BiidAuthNode extends AbstractDecisionNode {
+public class BiidAuthNode implements Node {
 
     private final Config config;
     private final BiidTransactionService biidTransactionService = new BiidTransactionService();
     private final CoreWrapper coreWrapper;
     private final static String DEBUG_FILE = "BiidAuthNode";
     protected Debug debug = Debug.getInstance(DEBUG_FILE);
+    private final static String TRUE_OUTCOME_ID = "true";
+    private final static String FALSE_OUTCOME_ID = "false";
 
 
     /**
@@ -100,5 +108,21 @@ public class BiidAuthNode extends AbstractDecisionNode {
             debug.error("[" + DEBUG_FILE + "]: " + "Error locating user '{}' ", e);
         }
         return goTo(false).build();
+    }
+
+    private Action.ActionBuilder goTo(boolean outcome) {
+        return Action.goTo(outcome ? TRUE_OUTCOME_ID : FALSE_OUTCOME_ID);
+    }
+
+    static final class OutcomeProvider implements org.forgerock.openam.auth.node.api.OutcomeProvider {
+        private static final String BUNDLE = BiidAuthNode.class.getName().replace(".", "/");
+
+        @Override
+        public List<Outcome> getOutcomes(PreferredLocales locales, JsonValue nodeAttributes) {
+            ResourceBundle bundle = locales.getBundleInPreferredLocale(BUNDLE, OutcomeProvider.class.getClassLoader());
+            return ImmutableList.of(
+                    new Outcome(TRUE_OUTCOME_ID, bundle.getString("trueOutcome")),
+                    new Outcome(FALSE_OUTCOME_ID, bundle.getString("falseOutcome")));
+        }
     }
 }
