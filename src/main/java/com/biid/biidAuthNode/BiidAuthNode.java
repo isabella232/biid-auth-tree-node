@@ -25,15 +25,19 @@ import org.forgerock.guava.common.collect.ImmutableList;
 import org.forgerock.json.JsonValue;
 import org.forgerock.openam.annotations.sm.Attribute;
 import org.forgerock.openam.auth.node.api.*;
+import org.forgerock.openam.authentication.callbacks.PollingWaitCallback;
 import org.forgerock.openam.core.CoreWrapper;
+import org.forgerock.openam.utils.Time;
 import org.forgerock.util.i18n.PreferredLocales;
 
 import javax.inject.Inject;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.ResourceBundle;
 
 import static java.lang.Thread.sleep;
+import static org.forgerock.openam.auth.node.api.Action.send;
 import static org.forgerock.openam.auth.node.api.SharedStateConstants.USERNAME;
 
 /**
@@ -51,6 +55,7 @@ public class BiidAuthNode implements Node {
     protected Debug debug = Debug.getInstance(DEBUG_FILE);
     private final static String TRUE_OUTCOME_ID = "true";
     private final static String FALSE_OUTCOME_ID = "false";
+    private final static String POLLING_TIME = "5000";//in millisec
 
 
     /**
@@ -70,6 +75,13 @@ public class BiidAuthNode implements Node {
         @Attribute(order = 300)
         String biidSiteUrl();
 
+//        @Attribute(order = 400)
+//        String attribute();
+
+        @Attribute(order = 400)
+        default int timeout() {
+            return 120_000;
+        };
     }
 
 
@@ -87,31 +99,43 @@ public class BiidAuthNode implements Node {
 
     @Override
     public Action process(TreeContext context) throws NodeProcessException {
-        debug.message("Starting biid node...");
-        String username = context.sharedState.get(USERNAME).asString();
-        if (StringUtils.isEmpty(username)) {
-            return goTo(false).build();
-        }
-        String entityKey = config.entityKey();
-        String appKey = config.appKey();
-        String biidSiteUrl = config.biidSiteUrl();
+        // Either initial call to this node, or a revisit from a polling callback?
+        if (!context.hasCallbacks()) {
+            debug.message("Starting biid node...");
+            String username = context.sharedState.get(USERNAME).asString();
+            if (StringUtils.isEmpty(username)) {
+                return goTo(false).build();
+            }
 
-        try {
-            biidTransactionService = new BiidTransactionService(biidSiteUrl, entityKey, appKey);
-            String idOfTransaction = biidTransactionService.sendAuthTransaction(username);
-            int counter = 0;
-            String status = biidTransactionService.getTransactionStatusById(idOfTransaction, username);
-            //2 minutes to verify
-            while (status.equals(IdentityTransactionItem.StatusEnum.PENDING.getValue()) && counter < 12) {
-                sleep(10_000);
-                counter++;
-                status = biidTransactionService.getTransactionStatusById(idOfTransaction, username);
+            try {
+                biidTransactionService = new BiidTransactionService(config.biidSiteUrl(), config.entityKey(), config.appKey());
+                String idOfTransaction = biidTransactionService.sendAuthTransaction(username);
+                return send(new PollingWaitCallback(POLLING_TIME)).replaceSharedState(context.sharedState.copy()
+                        .add("biid_start", Time.currentTimeMillis())
+                        .add("biid_transaction_id", idOfTransaction)).build();
+            } catch (Exception e) {
+                debug.error("[" + DEBUG_FILE + "]: " + "Error locating user '{}' ", e);
             }
-            if (status.equals(IdentityTransactionItem.StatusEnum.SUCCESSFUL.getValue())) {
-                goTo(true).build();
+        } else {
+            String username = context.sharedState.get(USERNAME).asString();
+            Optional<PollingWaitCallback> answer = context.getCallback(PollingWaitCallback.class);
+            if (answer.isPresent()) {
+                String idOfTransaction = context.sharedState.get("biid_transaction_id").asString();
+                // Check status with iProov
+                String status = null;
+                try {
+                    status = biidTransactionService.getTransactionStatusById(idOfTransaction, username);
+                } catch (Exception e) {
+                    debug.error("[" + DEBUG_FILE + "]: " + "Error locating user '{}' ", e);
+                    return goTo(false).build();
+                }
+                if (status.equals(IdentityTransactionItem.StatusEnum.SUCCESSFUL.getValue())) {
+                    goTo(true).build();
+                } else if (status.equals(IdentityTransactionItem.StatusEnum.PENDING.getValue()) &&
+                        (Time.currentTimeMillis() - context.sharedState.get("biid_start").asLong()) < config.timeout()){
+                    return send(new PollingWaitCallback(POLLING_TIME)).build();
+                }
             }
-        } catch (Exception e) {
-            debug.error("[" + DEBUG_FILE + "]: " + "Error locating user '{}' ", e);
         }
         return goTo(false).build();
     }
