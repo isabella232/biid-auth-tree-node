@@ -45,7 +45,7 @@ import static org.forgerock.openam.auth.node.api.SharedStateConstants.USERNAME;
 public class BiidAuthNode implements Node {
 
     private final Config config;
-    private final BiidTransactionService biidTransactionService = new BiidTransactionService();
+    private BiidTransactionService biidTransactionService;
     private final CoreWrapper coreWrapper;
     private final static String DEBUG_FILE = "BiidAuthNode";
     protected Debug debug = Debug.getInstance(DEBUG_FILE);
@@ -67,6 +67,9 @@ public class BiidAuthNode implements Node {
             return "appKey";
         }
 
+        @Attribute(order = 300)
+        String biidSiteUrl();
+
     }
 
 
@@ -84,22 +87,25 @@ public class BiidAuthNode implements Node {
 
     @Override
     public Action process(TreeContext context) throws NodeProcessException {
+        debug.message("Starting biid node...");
         String username = context.sharedState.get(USERNAME).asString();
         if (StringUtils.isEmpty(username)) {
             return goTo(false).build();
         }
         String entityKey = config.entityKey();
         String appKey = config.appKey();
+        String biidSiteUrl = config.biidSiteUrl();
 
         try {
-            String idOfTransaction = biidTransactionService.sendAuthTransaction(username, entityKey, appKey);
+            biidTransactionService = new BiidTransactionService(biidSiteUrl, entityKey, appKey);
+            String idOfTransaction = biidTransactionService.sendAuthTransaction(username);
             int counter = 0;
-            String status = biidTransactionService.getTransactionStatusById(idOfTransaction, entityKey, appKey);
-            //2 minutres to verify
+            String status = biidTransactionService.getTransactionStatusById(idOfTransaction, username);
+            //2 minutes to verify
             while (status.equals(IdentityTransactionItem.StatusEnum.PENDING.getValue()) && counter < 12) {
                 sleep(10_000);
                 counter++;
-                status = biidTransactionService.getTransactionStatusById(idOfTransaction, entityKey, appKey);
+                status = biidTransactionService.getTransactionStatusById(idOfTransaction, username);
             }
             if (status.equals(IdentityTransactionItem.StatusEnum.SUCCESSFUL.getValue())) {
                 goTo(true).build();

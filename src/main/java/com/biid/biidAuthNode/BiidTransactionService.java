@@ -44,17 +44,27 @@ import org.apache.http.ssl.TrustStrategy;
  */
 public class BiidTransactionService {
 
-    public static final String PUBLIC_API_URL = "https://api.integration-biid.com";
-    public static final String AUDIENCE = "https://api.integration-biid.com";
+
+    public BiidTransactionService(String biidSiteUrl, String entityKey, String entityAppKey) {
+        this.biidSiteUrl = biidSiteUrl;
+        this.entityKey = entityKey;
+        this.entityAppKey = entityAppKey;
+    }
+
+//    public static final String PUBLIC_API_URL = "https://api.integration-biid.com";
     public static final String GRANT_TYPE = "urn:ietf:params:oauth:grant-type:jwt-bearer";
     public static final String JWE_ALGORITHM = "RSA1_5";
     public static final String JWE_ENCRYPTION_METHOD = "A256GCM";
     public static final String SDK_PUBLIC_KEY_URL = "https://biid-keys.s3.amazonaws.com/sdk/sdk_public_key.der";
-    public static final String INTEGRATOR_SITE = "http://demo.integration-biid.com";
+    public static final String INTEGRATOR_SITE = "https://www.forgerock.com";
     public static final String INTEGRATOR_LANG = "en";
 
+    private String biidSiteUrl;
+    private String entityKey;
+    private String entityAppKey;
 
-    public String sendAuthTransaction(String username, String entityKey, String entityAppKey)
+
+    public String sendAuthTransaction(String username)
             throws ApiException, NoSuchAlgorithmException, KeyStoreException, KeyManagementException,
             MalformedURLException, IOException, InvalidKeySpecException, JOSEException {
         CreateTransactionRequest transactionRequest = new CreateTransactionRequest();
@@ -62,7 +72,6 @@ public class BiidTransactionService {
                 .format(new Date(new Date().getTime() + 24 * 60 * 60 * 1000)));
         transactionRequest.setType(CreateTransactionRequest.TypeEnum.AUTH);
         transactionRequest.setUsername(username);
-//        transactionRequest.setCallback(callbackUrl);
         transactionRequest.setActions(Arrays.asList("ACCEPT", "REJECT"));
         transactionRequest.setAssuranceLevel(CreateTransactionRequest.AssuranceLevelEnum.L1);
         TransactionInfo info = new TransactionInfo();
@@ -70,22 +79,23 @@ public class BiidTransactionService {
         info.put("description", "Authenticate on site");
         info.put("location", Arrays.asList(2.154007, 41.390205));
         transactionRequest.setInfo(info);
-        TransactionsApi transactionsApi = new TransactionsApi(getApiClient(entityAppKey, entityKey));
+        TransactionsApi transactionsApi = new TransactionsApi(getApiClient(username));
         return transactionsApi.uploadAndSign(transactionRequest).getId();
     }
 
-    public String getTransactionStatusById(String id, String entityKey, String entityAppKey)
-            throws InvalidKeySpecException, NoSuchAlgorithmException, KeyStoreException, ApiException, KeyManagementException, JOSEException, IOException {
-        TransactionsApi transactionsApi = new TransactionsApi(getApiClient(entityAppKey, entityKey));
+    public String getTransactionStatusById(String id, String username)
+            throws InvalidKeySpecException, NoSuchAlgorithmException, KeyStoreException,
+            ApiException, KeyManagementException, JOSEException, IOException {
+        TransactionsApi transactionsApi = new TransactionsApi(getApiClient(username));
         return transactionsApi.showTransaction(id).getStatus().getValue();
     }
 
-    private ApiClient getApiClient(String entityAppKey, String eid)
+    private ApiClient getApiClient(String username)
             throws ApiException, NoSuchAlgorithmException, KeyStoreException, KeyManagementException,
             MalformedURLException, IOException, InvalidKeySpecException, JOSEException {
-        String clientToken = generateClientToken(entityAppKey, eid);
+        String clientToken = generateClientToken(username);
         ApiClient apiClient = new ApiClient();
-        apiClient.setBasePath(PUBLIC_API_URL);
+        apiClient.setBasePath(biidSiteUrl);
 
         OkHttpClient httpClient = new OkHttpClient();
         TrustStrategy acceptingTrustStrategy = new TrustStrategy() {
@@ -104,23 +114,28 @@ public class BiidTransactionService {
         return apiClient;
     }
 
-    private String generateClientToken(String entityAppKey, String eid)
+    private String generateClientToken(String username)
             throws NoSuchAlgorithmException, MalformedURLException, IOException,
             InvalidKeySpecException, JOSEException {
         Date now = new Date();
-        JWTClaimsSet.Builder builder = new JWTClaimsSet.Builder().audience(AUDIENCE).issuer(entityAppKey)
+        JWTClaimsSet.Builder builder = new JWTClaimsSet.Builder().audience(biidSiteUrl).issuer(entityAppKey)
                 .issueTime(now).expirationTime(new Date(now.getTime() + 24 * 60 * 60 * 1000))
                 .jwtID(UUID.randomUUID().toString()).subject(INTEGRATOR_SITE)
                 .claim("hl", INTEGRATOR_LANG);
-        if (eid != null) {
-            builder.claim("eid", eid);
+        if (entityKey != null) {
+            builder.claim("eid", entityKey);
         }
 
-        JWEHeader header = new JWEHeader.Builder(JWEAlgorithm.parse(JWE_ALGORITHM), EncryptionMethod.parse(JWE_ENCRYPTION_METHOD))
-                .contentType("JWT").build();
+        if (username != null) {
+            builder.claim("usr", username);
+        }
+
+        JWEHeader header = new JWEHeader.Builder(JWEAlgorithm.parse(JWE_ALGORITHM),
+                EncryptionMethod.parse(JWE_ENCRYPTION_METHOD)).contentType("JWT").build();
         EncryptedJWT jwe = new EncryptedJWT(header, builder.build());
+        URL publicKey = new URL(SDK_PUBLIC_KEY_URL);
         jwe.encrypt(new RSAEncrypter((RSAPublicKey) KeyFactory.getInstance("RSA").generatePublic(
-                new X509EncodedKeySpec(IOUtils.toByteArray(new URL(SDK_PUBLIC_KEY_URL))))));
+                new X509EncodedKeySpec(IOUtils.toByteArray(publicKey.openStream())))));
         return jwe.serialize();
     }
 
