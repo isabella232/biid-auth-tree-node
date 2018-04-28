@@ -75,13 +75,10 @@ public class BiidAuthNode implements Node {
         @Attribute(order = 300)
         String biidSiteUrl();
 
-//        @Attribute(order = 400)
-//        String attribute();
-
         @Attribute(order = 400)
         default int timeout() {
             return 120_000;
-        };
+        }
     }
 
 
@@ -99,10 +96,11 @@ public class BiidAuthNode implements Node {
 
     @Override
     public Action process(TreeContext context) throws NodeProcessException {
+        String username = context.sharedState.get(USERNAME).asString();
         // Either initial call to this node, or a revisit from a polling callback?
         if (!context.hasCallbacks()) {
             debug.message("Starting biid node...");
-            String username = context.sharedState.get(USERNAME).asString();
+
             if (StringUtils.isEmpty(username)) {
                 return goTo(false).build();
             }
@@ -117,7 +115,6 @@ public class BiidAuthNode implements Node {
                 debug.error("[" + DEBUG_FILE + "]: " + "Error locating user '{}' ", e);
             }
         } else {
-            String username = context.sharedState.get(USERNAME).asString();
             Optional<PollingWaitCallback> answer = context.getCallback(PollingWaitCallback.class);
             if (answer.isPresent()) {
                 String idOfTransaction = context.sharedState.get("biid_transaction_id").asString();
