@@ -1,12 +1,5 @@
 package com.biid.biidAuthNode;
 
-import com.biid.api.service.integrator.api.AuthorizationApi;
-import com.biid.api.service.integrator.api.TransactionsApi;
-import com.biid.api.service.integrator.gen.ApiClient;
-import com.biid.api.service.integrator.gen.ApiException;
-import com.biid.api.service.integrator.model.AccessToken;
-import com.biid.api.service.integrator.model.CreateTransactionRequest;
-import com.biid.api.service.integrator.model.TransactionInfo;
 import com.nimbusds.jose.EncryptionMethod;
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JWEAlgorithm;
@@ -14,15 +7,19 @@ import com.nimbusds.jose.JWEHeader;
 import com.nimbusds.jose.crypto.RSAEncrypter;
 import com.nimbusds.jwt.EncryptedJWT;
 import com.nimbusds.jwt.JWTClaimsSet;
-import com.squareup.okhttp.OkHttpClient;
 
+import java.io.InputStream;
 import java.io.IOException;
+import java.io.OutputStreamWriter;
 import java.net.MalformedURLException;
+import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.security.KeyFactory;
 import java.security.KeyStoreException;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 import java.security.interfaces.RSAPublicKey;
 import java.security.spec.InvalidKeySpecException;
@@ -31,11 +28,15 @@ import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.UUID;
+import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 
+import net.minidev.json.JSONObject;
+import net.minidev.json.parser.JSONParser;
+import net.minidev.json.parser.ParseException;
 import org.apache.commons.io.IOUtils;
-import org.apache.http.ssl.SSLContexts;
-import org.apache.http.ssl.TrustStrategy;
 
 /**
  * Biid transaction service based on api-biid-integrator library
@@ -45,10 +46,12 @@ import org.apache.http.ssl.TrustStrategy;
 public class BiidTransactionService {
 
 
-    public BiidTransactionService(String biidSiteUrl, String entityKey, String entityAppKey) {
+    public BiidTransactionService(String biidSiteUrl, String entityKey, String entityAppKey)
+            throws NoSuchAlgorithmException, KeyManagementException {
         this.biidSiteUrl = biidSiteUrl;
         this.entityKey = entityKey;
         this.entityAppKey = entityAppKey;
+        trustAllSslConnections();
     }
 
 //    public static final String PUBLIC_API_URL = "https://api.integration-biid.com";
@@ -65,58 +68,86 @@ public class BiidTransactionService {
 
 
     public String sendAuthTransaction(String username)
-            throws ApiException, NoSuchAlgorithmException, KeyStoreException, KeyManagementException,
-            MalformedURLException, IOException, InvalidKeySpecException, JOSEException {
-        CreateTransactionRequest transactionRequest = new CreateTransactionRequest();
-        transactionRequest.setExpirationDate(new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'")
-                .format(new Date(new Date().getTime() + 24 * 60 * 60 * 1000)));
-        transactionRequest.setType(CreateTransactionRequest.TypeEnum.AUTH);
-        transactionRequest.setUsername(username);
-        transactionRequest.setActions(Arrays.asList("ACCEPT", "REJECT"));
-        transactionRequest.setAssuranceLevel(CreateTransactionRequest.AssuranceLevelEnum.L1);
-        TransactionInfo info = new TransactionInfo();
-        info.put("title", "Authenticate");
-        info.put("description", "Authenticate on site");
-        info.put("location", Arrays.asList(2.154007, 41.390205));
-        transactionRequest.setInfo(info);
-        TransactionsApi transactionsApi = new TransactionsApi(getApiClient(username));
-        return transactionsApi.uploadAndSign(transactionRequest).getId();
+            throws /*NoSuchAlgorithmException, KeyStoreException, KeyManagementException,
+            MalformedURLException, IOException, InvalidKeySpecException, JOSEException,
+            ParseException,*/ Exception {
+        URL trUrl = new URL(biidSiteUrl + "/integrator/transactions");
+        HttpURLConnection connection = null;
+        InputStream respStream = null;
+        try {
+            connection = (HttpURLConnection) trUrl.openConnection();
+            connection.setDoOutput(true);
+            connection.setRequestMethod("POST");
+            connection.setRequestProperty("Authorization", "Bearer " + getIntegratorAccessToken(username));
+            connection.setRequestProperty("Accept", "application/json");
+            connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+
+            JSONObject payload = new JSONObject();
+            payload.put("type", "AUTH");
+            payload.put("username", username);
+            payload.put("expirationDate", new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'")
+                    .format(new Date(new Date().getTime() + 24 * 60 * 60 * 1000)));
+            payload.put("actions", Arrays.asList("ACCEPT", "REJECT"));
+            payload.put("assuranceLevel", "L1");
+            JSONObject info = new JSONObject();
+            info.put("title", "Authenticate");
+            info.put("description", "Authenticate on site");
+            info.put("location", Arrays.asList(2.154007d, 41.390205d));
+            payload.put("info", info);
+            OutputStreamWriter writer = new OutputStreamWriter(connection.getOutputStream(), "UTF-8");
+            writer.write(payload.toJSONString());
+            writer.close();
+
+            if (connection.getResponseCode() == 201) {
+                respStream = connection.getInputStream();
+                JSONObject json = (JSONObject) new JSONParser().parse(respStream);
+                return (String) json.get("id");
+            } else {
+                // TODO: handle response errors in a proper way
+                throw new Exception("Unable to create AUTH transaction");
+            }
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+            if (respStream != null) {
+                respStream.close();
+            }
+        }
     }
 
     public String getTransactionStatusById(String id, String username)
-            throws InvalidKeySpecException, NoSuchAlgorithmException, KeyStoreException,
-            ApiException, KeyManagementException, JOSEException, IOException {
-        TransactionsApi transactionsApi = new TransactionsApi(getApiClient(username));
-        return transactionsApi.showTransaction(id).getStatus().getValue();
-    }
-
-    private ApiClient getApiClient(String username)
-            throws ApiException, NoSuchAlgorithmException, KeyStoreException, KeyManagementException,
-            MalformedURLException, IOException, InvalidKeySpecException, JOSEException {
-        String clientToken = generateClientToken(username);
-        ApiClient apiClient = new ApiClient();
-        apiClient.setBasePath(biidSiteUrl);
-
-        OkHttpClient httpClient = new OkHttpClient();
-        TrustStrategy acceptingTrustStrategy = new TrustStrategy() {
-            public boolean isTrusted(X509Certificate[] chain, String authType) {
-                return true;
+            throws /*InvalidKeySpecException, NoSuchAlgorithmException, KeyStoreException,
+            KeyManagementException, JOSEException, IOException, ParseException,*/ Exception {
+        URL trUrl = new URL(biidSiteUrl + "/integrator/transactions/" + id);
+        HttpURLConnection connection = null;
+        InputStream respStream = null;
+        try {
+            connection = (HttpURLConnection) trUrl.openConnection();
+            connection.setRequestProperty("Authorization", "Bearer " + getIntegratorAccessToken(username));
+            connection.setRequestProperty("Accept", "application/json");
+           
+            if (connection.getResponseCode() == 200) {
+                respStream = connection.getInputStream();
+                JSONObject json = (JSONObject) new JSONParser().parse(respStream);
+                return (String) json.get("status");
+            } else {
+                // TODO: handle response errors in a proper way
+                throw new Exception("Unable to get transaction status");
             }
-        };
-        SSLContext sslContext = SSLContexts.custom().loadTrustMaterial(null, acceptingTrustStrategy).build();
-        httpClient.setSslSocketFactory(sslContext.getSocketFactory());
-        apiClient.setHttpClient(httpClient);
-
-        AuthorizationApi authorizationApi = new AuthorizationApi(apiClient);
-        AccessToken accessToken = authorizationApi.token(GRANT_TYPE, clientToken);
-        apiClient.setAccessToken(accessToken.getAccessToken());
-
-        return apiClient;
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+            if (respStream != null) {
+                respStream.close();
+            }
+        }
     }
 
-    private String generateClientToken(String username)
-            throws NoSuchAlgorithmException, MalformedURLException, IOException,
-            InvalidKeySpecException, JOSEException {
+    private String getIntegratorAccessToken(String username)
+            throws /*NoSuchAlgorithmException, MalformedURLException, IOException,
+            InvalidKeySpecException, JOSEException, ParseException,*/ Exception {
         Date now = new Date();
         JWTClaimsSet.Builder builder = new JWTClaimsSet.Builder().audience(biidSiteUrl).issuer(entityAppKey)
                 .issueTime(now).expirationTime(new Date(now.getTime() + 24 * 60 * 60 * 1000))
@@ -134,9 +165,55 @@ public class BiidTransactionService {
                 EncryptionMethod.parse(JWE_ENCRYPTION_METHOD)).contentType("JWT").build();
         EncryptedJWT jwe = new EncryptedJWT(header, builder.build());
         URL publicKey = new URL(SDK_PUBLIC_KEY_URL);
-        jwe.encrypt(new RSAEncrypter((RSAPublicKey) KeyFactory.getInstance("RSA").generatePublic(
-                new X509EncodedKeySpec(IOUtils.toByteArray(publicKey.openStream())))));
-        return jwe.serialize();
+        InputStream is = publicKey.openStream();
+        try {
+            jwe.encrypt(new RSAEncrypter((RSAPublicKey) KeyFactory.getInstance("RSA").generatePublic(
+                    new X509EncodedKeySpec(IOUtils.toByteArray(is)))));
+        } finally {
+            is.close();
+        }
+        String clientToken = jwe.serialize();
+
+        URL authUrl = new URL(biidSiteUrl + "/integrator/oauth2/token"
+                + "?grant_type=" + URLEncoder.encode(GRANT_TYPE, "UTF-8")
+                + "&assertion=" + URLEncoder.encode(clientToken, "UTF-8"));
+        HttpURLConnection connection = null;
+        InputStream respStream = null;
+        try {
+            connection = (HttpURLConnection) authUrl.openConnection();
+            connection.setRequestMethod("POST");
+            connection.setRequestProperty("Accept", "application/json");
+            connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+            if (connection.getResponseCode() == 200) {
+                respStream = connection.getInputStream();
+                JSONObject json = (JSONObject) new JSONParser().parse(respStream);
+                return (String) json.get("access_token");
+            } else {
+                // TODO: handle response errors in a proper way
+                throw new Exception("Unable to get access token");
+            }
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+            if (respStream != null) {
+                respStream.close();
+            }
+        }
     }
 
+    private void trustAllSslConnections() throws NoSuchAlgorithmException, KeyManagementException {
+        TrustManager trustManager = new X509TrustManager() {
+            public void checkClientTrusted(X509Certificate[] chain, String authType) {
+            }
+            public void checkServerTrusted(X509Certificate[] chain, String authType) {
+            }
+            public X509Certificate[] getAcceptedIssuers() {
+                return null;
+            }
+        };
+        SSLContext sslContext = SSLContext.getInstance("SSL");
+        sslContext.init(null, new TrustManager[] {trustManager}, new SecureRandom());
+        HttpsURLConnection.setDefaultSSLSocketFactory(sslContext.getSocketFactory());
+    }
 }

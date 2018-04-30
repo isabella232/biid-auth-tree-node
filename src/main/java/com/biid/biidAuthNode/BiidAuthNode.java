@@ -17,7 +17,6 @@
 
 package com.biid.biidAuthNode;
 
-import com.biid.api.service.integrator.model.IdentityTransactionItem;
 import com.google.inject.assistedinject.Assisted;
 import com.sun.identity.shared.debug.Debug;
 import org.apache.commons.lang.StringUtils;
@@ -126,9 +125,9 @@ public class BiidAuthNode implements Node {
                     debug.error("[" + DEBUG_FILE + "]: " + "Error locating user '{}' ", e);
                     return goTo(false).build();
                 }
-                if (status.equals(IdentityTransactionItem.StatusEnum.SUCCESSFUL.getValue())) {
+                if (status.equals("SUCCESSFUL")) {
                     goTo(true).build();
-                } else if (status.equals(IdentityTransactionItem.StatusEnum.PENDING.getValue()) &&
+                } else if (status.equals("PENDING") &&
                         (Time.currentTimeMillis() - context.sharedState.get("biid_start").asLong()) < config.timeout()){
                     return send(new PollingWaitCallback(POLLING_TIME)).build();
                 }
