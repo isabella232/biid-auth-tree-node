@@ -91,6 +91,11 @@ public class BiidAuthNode implements Node {
     public BiidAuthNode(@Assisted Config config, CoreWrapper coreWrapper) throws NodeProcessException {
         this.config = config;
         this.coreWrapper = coreWrapper;
+        try {
+            this.biidTransactionService = new BiidTransactionService(config.biidSiteUrl(), config.entityKey(), config.appKey());
+        } catch (Exception e) {
+            debug.error("[" + DEBUG_FILE + "]: " + "Error setting configs: " + e.getMessage(), e);
+        }
     }
 
     @Override
@@ -105,7 +110,6 @@ public class BiidAuthNode implements Node {
             }
 
             try {
-                biidTransactionService = new BiidTransactionService(config.biidSiteUrl(), config.entityKey(), config.appKey());
                 String idOfTransaction = biidTransactionService.sendAuthTransaction(username);
                 return send(new PollingWaitCallback(POLLING_TIME)).replaceSharedState(context.sharedState.copy()
                         .add("biid_start", Time.currentTimeMillis())
@@ -117,7 +121,7 @@ public class BiidAuthNode implements Node {
             Optional<PollingWaitCallback> answer = context.getCallback(PollingWaitCallback.class);
             if (answer.isPresent()) {
                 String idOfTransaction = context.sharedState.get("biid_transaction_id").asString();
-                // Check status with iProov
+                // Check status of biid transaction
                 String status = null;
                 try {
                     status = biidTransactionService.getTransactionStatusById(idOfTransaction, username);
@@ -128,7 +132,7 @@ public class BiidAuthNode implements Node {
                 if (status.equals("SUCCESSFUL")) {
                     goTo(true).build();
                 } else if (status.equals("PENDING") &&
-                        (Time.currentTimeMillis() - context.sharedState.get("biid_start").asLong()) < config.timeout()){
+                        (Time.currentTimeMillis() - context.sharedState.get("biid_start").asLong()) < config.timeout()) {
                     return send(new PollingWaitCallback(POLLING_TIME)).build();
                 }
             }
