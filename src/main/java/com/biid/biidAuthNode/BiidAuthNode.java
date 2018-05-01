@@ -115,7 +115,8 @@ public class BiidAuthNode implements Node {
                         .add("biid_start", Time.currentTimeMillis())
                         .add("biid_transaction_id", idOfTransaction)).build();
             } catch (Exception e) {
-                debug.error("[" + DEBUG_FILE + "]: " + "Error locating user '{}' ", e);
+                debug.error("[" + DEBUG_FILE + "]: " + "Error sending transaction for user '" + username + "': "
+                        + e.getMessage(), e);
             }
         } else {
             Optional<PollingWaitCallback> answer = context.getCallback(PollingWaitCallback.class);
@@ -126,7 +127,8 @@ public class BiidAuthNode implements Node {
                 try {
                     status = biidTransactionService.getTransactionStatusById(idOfTransaction, username);
                 } catch (Exception e) {
-                    debug.error("[" + DEBUG_FILE + "]: " + "Error locating user '{}' ", e);
+                    debug.error("[" + DEBUG_FILE + "]: " + "Error getting status for transaction '" +
+                            idOfTransaction + "': " + e.getMessage(), e);
                     return goTo(false).build();
                 }
                 if (status.equals("SUCCESSFUL")) {
