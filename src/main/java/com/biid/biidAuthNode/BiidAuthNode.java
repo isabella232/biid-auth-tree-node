@@ -18,6 +18,9 @@
 package com.biid.biidAuthNode;
 
 import com.google.inject.assistedinject.Assisted;
+import com.iplanet.sso.SSOException;
+import com.sun.identity.idm.AMIdentity;
+import com.sun.identity.idm.IdRepoException;
 import com.sun.identity.shared.debug.Debug;
 import org.apache.commons.lang.StringUtils;
 import org.forgerock.guava.common.collect.ImmutableList;
@@ -34,9 +37,11 @@ import javax.inject.Inject;
 import java.util.List;
 import java.util.Optional;
 import java.util.ResourceBundle;
+import java.util.Set;
 
 import static java.lang.Thread.sleep;
 import static org.forgerock.openam.auth.node.api.Action.send;
+import static org.forgerock.openam.auth.node.api.SharedStateConstants.REALM;
 import static org.forgerock.openam.auth.node.api.SharedStateConstants.USERNAME;
 
 /**
@@ -75,6 +80,11 @@ public class BiidAuthNode implements Node {
         String biidSiteUrl();
 
         @Attribute(order = 400)
+        default String attribute() {
+            return "username";
+        };
+
+        @Attribute(order = 500)
         default int timeout() {
             return 120_000;
         }
@@ -100,22 +110,25 @@ public class BiidAuthNode implements Node {
 
     @Override
     public Action process(TreeContext context) throws NodeProcessException {
-        String username = context.sharedState.get(USERNAME).asString();
+        AMIdentity userIdentity = coreWrapper.getIdentity(context.sharedState.get(USERNAME).asString(),
+                context.sharedState.get(REALM).asString());
+        String biidUsername = getUsername(userIdentity);
+
         // Either initial call to this node, or a revisit from a polling callback?
         if (!context.hasCallbacks()) {
             debug.message("Starting biid node...");
 
-            if (StringUtils.isEmpty(username)) {
+            if (StringUtils.isEmpty(biidUsername)) {
                 return goTo(false).build();
             }
 
             try {
-                String idOfTransaction = biidTransactionService.sendAuthTransaction(username);
+                String idOfTransaction = biidTransactionService.sendAuthTransaction(biidUsername);
                 return send(new PollingWaitCallback(POLLING_TIME)).replaceSharedState(context.sharedState.copy()
                         .add("biid_start", Time.currentTimeMillis())
                         .add("biid_transaction_id", idOfTransaction)).build();
             } catch (Exception e) {
-                debug.error("[" + DEBUG_FILE + "]: " + "Error sending transaction for user '" + username + "': "
+                debug.error("[" + DEBUG_FILE + "]: " + "Error sending transaction for user '" + biidUsername + "': "
                         + e.getMessage(), e);
             }
         } else {
@@ -125,7 +138,7 @@ public class BiidAuthNode implements Node {
                 // Check status of biid transaction
                 String status = null;
                 try {
-                    status = biidTransactionService.getTransactionStatusById(idOfTransaction, username);
+                    status = biidTransactionService.getTransactionStatusById(idOfTransaction, biidUsername);
                 } catch (Exception e) {
                     debug.error("[" + DEBUG_FILE + "]: " + "Error getting status for transaction '" +
                             idOfTransaction + "': " + e.getMessage(), e);
@@ -140,6 +153,21 @@ public class BiidAuthNode implements Node {
             }
         }
         return goTo(false).build();
+    }
+
+    private String getUsername(AMIdentity userIdentity) {
+        String username = null;
+        try {
+            Set idAttrs = userIdentity.getAttribute(config.attribute());
+            if (idAttrs == null || idAttrs.isEmpty()) {
+                debug.error("[" + DEBUG_FILE + "]: " + "Unable to find iProov user attribute: " + config.attribute());
+            } else {
+                username = (String) idAttrs.iterator().next();
+            }
+        } catch (IdRepoException | SSOException e) {
+            debug.error("[" + DEBUG_FILE + "]: " + "Error getting attribute " + e.getMessage(), e);
+        }
+        return username;
     }
 
     private Action.ActionBuilder goTo(boolean outcome) {
