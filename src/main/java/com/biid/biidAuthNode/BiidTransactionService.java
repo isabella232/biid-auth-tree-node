@@ -78,7 +78,7 @@ public class BiidTransactionService {
             connection = (HttpURLConnection) trUrl.openConnection();
             connection.setDoOutput(true);
             connection.setRequestMethod("POST");
-            connection.setRequestProperty("Authorization", "Bearer " + getIntegratorAccessToken(username));
+            connection.setRequestProperty("Authorization", "Bearer " + getIntegratorAccessToken());
             connection.setRequestProperty("Accept", "application/json");
             connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
 
@@ -116,7 +116,7 @@ public class BiidTransactionService {
         }
     }
 
-    public String getTransactionStatusById(String id, String username)
+    public String getTransactionStatusById(String id)
             throws /*InvalidKeySpecException, NoSuchAlgorithmException, KeyStoreException,
             KeyManagementException, JOSEException, IOException, ParseException,*/ Exception {
         URL trUrl = new URL(biidSiteUrl + "/integrator/transactions/" + id);
@@ -124,7 +124,7 @@ public class BiidTransactionService {
         InputStream respStream = null;
         try {
             connection = (HttpURLConnection) trUrl.openConnection();
-            connection.setRequestProperty("Authorization", "Bearer " + getIntegratorAccessToken(username));
+            connection.setRequestProperty("Authorization", "Bearer " + getIntegratorAccessToken());
             connection.setRequestProperty("Accept", "application/json");
            
             if (connection.getResponseCode() == 200) {
@@ -145,7 +145,7 @@ public class BiidTransactionService {
         }
     }
 
-    private String getIntegratorAccessToken(String username)
+    private String getIntegratorAccessToken()
             throws /*NoSuchAlgorithmException, MalformedURLException, IOException,
             InvalidKeySpecException, JOSEException, ParseException,*/ Exception {
         Date now = new Date();
@@ -155,10 +155,6 @@ public class BiidTransactionService {
                 .claim("hl", INTEGRATOR_LANG);
         if (entityKey != null) {
             builder.claim("eid", entityKey);
-        }
-
-        if (username != null) {
-            builder.claim("usr", username);
         }
 
         JWEHeader header = new JWEHeader.Builder(JWEAlgorithm.parse(JWE_ALGORITHM),

@@ -61,7 +61,8 @@ public class BiidAuthNodePlugin extends AbstractNodeAmPlugin {
     @Override
     protected Iterable<? extends Class<? extends Node>> getNodes() {
         return asList(
-                BiidAuthNode.class
+                BiidAuthNodeInitiator.class,
+                BiidAuthNodeDecision.class
         );
     }
 }
