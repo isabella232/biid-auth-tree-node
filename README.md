@@ -9,13 +9,13 @@
  * When distributing Covered Software, include this CDDL Header Notice in each file and include
  * the License file at legal/CDDLv1.0.txt. If applicable, add the following below the CDDL
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
- * information: "Portions copyright [year] [name of copyright owner]".
+ * information: "Portions copyright 2018 biid".
  *
- * Copyright ${data.get('yyyy')} ForgeRock AS.
+ * Copyright 2018 ForgeRock AS.
 -->
 # biidAuthNode
 
-A simple authentication node for ForgeRock's [Identity Platform][forgerock_platform] 5.5 and above. This node... **SHORT DESCRIPTION HERE**
+A simple authentication node for ForgeRock's [Identity Platform][forgerock_platform] 6.0 and above. This node allow client to Authenticate with biid platform via biid mobile app or SDK.
 
 
 Copy the .jar file from the ../target directory into the ../web-container/webapps/openam/WEB-INF/lib directory where AM is deployed.  Restart the web container to pick up the new node.  The node will then appear in the authentication trees components palette.
@@ -30,7 +30,7 @@ The code in this repository has binary dependencies that live in the ForgeRock m
 
 **SCREENSHOTS ARE GOOD LIKE BELOW**
 
-![ScreenShot](./example.png)
+![ScreenShot](./biid_auth_flow.png)
 
         
 The sample code described herein is provided on an "as is" basis, without warranty of any kind, to the fullest extent permitted by law. ForgeRock does not warrant or guarantee the individual success developers may have in implementing the sample code on their development platforms or in production configurations.
