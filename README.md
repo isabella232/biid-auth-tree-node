@@ -1,42 +1,46 @@
-<!--
- * The contents of this file are subject to the terms of the Common Development and
- * Distribution License (the License). You may not use this file except in compliance with the
- * License.
- *
- * You can obtain a copy of the License at legal/CDDLv1.0.txt. See the License for the
- * specific language governing permission and limitations under the License.
- *
- * When distributing Covered Software, include this CDDL Header Notice in each file and include
- * the License file at legal/CDDLv1.0.txt. If applicable, add the following below the CDDL
- * Header, with the fields enclosed by brackets [] replaced by your own identifying
- * information: "Portions copyright 2018 biid".
- *
- * Copyright 2018 ForgeRock AS.
--->
-# biidAuthNode
+![ScreenShot](images/biid_auth_flow.png)
 
-A simple authentication node for ForgeRock's [Identity Platform][forgerock_platform] 6.0 and above. This node allow client to Authenticate with biid platform via biid mobile app or SDK.
+![image alt text](/images/biid_logo.png)
 
+# Biid Authentication Node
 
-Copy the .jar file from the ../target directory into the ../web-container/webapps/openam/WEB-INF/lib directory where AM is deployed.  Restart the web container to pick up the new node.  The node will then appear in the authentication trees components palette.
+The Biid Authentication Node allows ForgeRock users to integrate their AM instance to the Biid platform.
+This document assumes that you already have an AM 5.5+ instance running with users configured.
 
+## Installation
 
-**USAGE HERE**
+Follow this steps in order to install the node:
 
+1. Download the jar file from [here](biidAuthNode-1.0.0-no-deps.jar).
+2. Copy the **biidAuthNode-1.0.0-no-deps.jar** file on your server: `/path/to/tomcat/webapps/openam/WEB-INF/lib`
+3. Restart AM.
+4. Login into Biid Back Office and open your `Entity` details. Copy the **Entity Key** value save it for later.
 
-The code in this repository has binary dependencies that live in the ForgeRock maven repository. Maven can be configured to authenticate to this repository by following the following [ForgeRock Knowledge Base Article](https://backstage.forgerock.com/knowledge/kb/article/a74096897).
+![image alt text](/images/biid_entity_key.png)
 
-**SPECIFIC BUILD INSTRUCTIONS HERE**
+5. Stay in Biid Back Office and open `Entity App` that is going to be used. Copy the **App API Key** value save it for later.
 
-**SCREENSHOTS ARE GOOD LIKE BELOW**
+![image alt text](/images/biid_app_key.png)
 
-![ScreenShot](./biid_auth_flow.png)
+6. Login into AM console as an administrator and go to `Realms > Top Level Real > Authentication > Trees`.
+7. Click on **Add Tree** button. Name the tree `biid` and click **Create**.
 
-        
-The sample code described herein is provided on an "as is" basis, without warranty of any kind, to the fullest extent permitted by law. ForgeRock does not warrant or guarantee the individual success developers may have in implementing the sample code on their development platforms or in production configurations.
+![image](/images/create_tree.png)
 
-ForgeRock does not warrant, guarantee or make any representations regarding the use, results of use, accuracy, timeliness or completeness of any data or information relating to the sample code. ForgeRock disclaims all warranties, expressed or implied, and in particular, disclaims all warranties of merchantability, and warranties related to the code, or any service or software related thereto.
+8. Add 3 tree nodes: Start, Username Collector, Biid Authentication Initiator.
+9. Connect them as shown in the image below.
 
-ForgeRock shall not be liable for any direct, indirect or consequential damages or costs of any type arising out of any action taken by you or others related to the sample code.
+![image](/images/biid_auth_init.png)
 
-[forgerock_platform]: https://www.forgerock.com/platform/  
+10. Select the **Biid Authentication Initiator** node and set the **Entity Key** from step 4, **App API Key** from step 5. Set **Biid API Server URL** based on your biid server location - it should be like `https://api.integration-biid.com`. Set **Attribute** that should be taken from Forgerock user as biid user, default is same username `sn`.
+11. Add 5 nodes: Polling Wait Node, Biid Authentication Decision, Retry Decision Limit, Failure and Success.
+12. Select the Polling Wait Node and set **Seconds To Wait** to 15.
+13. Select the Retry Decision Limit and set the **Retry Limit** to 4.
+
+![image](/images/biid_auth_flow.png)
+
+14. Save changes.
+15. You can test the Biid authentication tree by accessing this URL in your browser `https://YOUR_AM_SERVER HERE/openam/XUI/?realm=/#login/&service=biid`.</br>
+16. Enter your username and hit enter. An authentication request will be send to biid app through the AM authentication tree. Biid will verify you username and keys. If everything is correct you should get an authentication request on your phone.
+
+![image](/images/demo_auth.png)
