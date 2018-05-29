@@ -1,5 +1,3 @@
-![ScreenShot](images/biid_auth_flow.png)
-
 ![image alt text](/images/biid_logo.png)
 
 # Biid Authentication Node
